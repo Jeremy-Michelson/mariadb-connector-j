@@ -12,6 +12,10 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.FileAppender;
 import java.io.*;
 import java.sql.SQLException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.mariadb.jdbc.util.log.Logger;
 import org.mariadb.jdbc.util.log.Loggers;
@@ -153,6 +157,58 @@ public class LoggersTest {
     } finally {
       System.clearProperty(Loggers.NO_LOGGER_PROPERTY);
       Loggers.init();
+    }
+  }
+
+  @Test
+  void isThreadSafe() {
+    try {
+      System.setProperty(Loggers.TEST_ENABLE_SLF4J, "false");
+      Loggers.init();
+      doIsThreadSafe();
+    } finally {
+      System.clearProperty(Loggers.TEST_ENABLE_SLF4J);
+      Loggers.init();
+    }
+  }
+
+  private void doIsThreadSafe() {
+    final int numThreads = Math.max(2, Runtime.getRuntime().availableProcessors());
+
+    final CountDownLatch latch = new CountDownLatch(1);
+    final FutureTask<?>[] threads = new FutureTask<?>[numThreads];
+    final AtomicReference<Logger> logger = new AtomicReference<Logger>();
+    for (int i = numThreads; --i >= 0; ) {
+      threads[i] =
+          new FutureTask<Void>(
+              new Runnable() {
+                @Override
+                public void run() {
+                  try {
+                    latch.await();
+                  } catch (InterruptedException e) {
+                    fail(e);
+                  }
+
+                  Logger myLogger =
+                      Loggers.getLogger(
+                          this.getClass()); // no other test will have acquired this logger
+                  if (!logger.compareAndSet(null, myLogger)) {
+                    assertSame(myLogger, logger.get()); // no race condition
+                  }
+                }
+              },
+              null);
+      new Thread(threads[i]).start();
+    }
+
+    latch.countDown();
+    for (int i = numThreads; --i >= 0; ) {
+      try {
+        threads[i].get();
+      } catch (InterruptedException | ExecutionException e) {
+        fail(e);
+      }
     }
   }
 }
