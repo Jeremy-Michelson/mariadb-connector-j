@@ -3,7 +3,7 @@
 // Copyright (c) 2015-2025 MariaDB Corporation Ab
 package org.mariadb.jdbc.util.log;
 
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Loggers factory */
 public final class Loggers {
@@ -21,7 +21,7 @@ public final class Loggers {
   public static final String NO_LOGGER_PROPERTY = "mariadb.logging.disable";
 
   /** factory */
-  private static LoggerFactory LOGGER_FACTORY;
+  private static volatile LoggerFactory LOGGER_FACTORY;
 
   static {
     init();
@@ -108,7 +108,8 @@ public final class Loggers {
 
   private static final class ConsoleLoggerFactory implements LoggerFactory {
 
-    private static final HashMap<String, Logger> consoleLoggers = new HashMap<>();
+    private static final ConcurrentHashMap<String, Logger> consoleLoggers =
+        new ConcurrentHashMap<>();
 
     @Override
     public Logger getLogger(String name) {
